@@ -5,14 +5,19 @@ GenVeda RAG Chat Engine
 - Connected to PatientChat via /api/chat/ POST endpoint
 """
 
+import os
 import requests
 import json
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ─── Config ────────────────────────────────────────────────────────────────
-CEREBRAS_API_KEY = "csk-p6ertpyrt42rf8en98dvppf3ywtjvnj4pr3f5e5mjfymypx3"
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
 
 # Cerebras models for fast medical reasoning
 AVAILABLE_MODELS = [
