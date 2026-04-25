@@ -225,7 +225,12 @@ class PatientViewSet(viewsets.ModelViewSet):
         return Patient.objects.none()
 
     def perform_create(self, serializer):
+        # Any authenticated staff (doctor/nurse) can create a centralized patient record
         serializer.save(user=self.request.user)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        return context
 
 
 # -----------------------------

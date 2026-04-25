@@ -20,6 +20,7 @@ urlpatterns = [
 
     # Patients
     path("patients/", PatientViewSet.as_view({'get': 'list', 'post': 'create'}), name="patients"),
+    path("patients/<int:pk>/", PatientViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name="patient-detail"),
 
     # Scans
     path("scans/", ScanLogViewSet.as_view({'get': 'list', 'post': 'create'}), name="scans"),
