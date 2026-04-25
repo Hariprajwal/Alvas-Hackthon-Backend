@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 import random
+import hashlib
 
 
 ROLE_CHOICES = [
@@ -90,6 +91,10 @@ class ScanLog(models.Model):
     doctor_notes = models.TextField(blank=True, null=True)
     doctor_validated_disease = models.CharField(max_length=100, blank=True, null=True)
     is_escalated = models.BooleanField(default=False)
+    assigned_doctor = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assigned_scans', limit_choices_to={'role': 'doctor'}
+    )
     
     # Blockchain Integrity
     scan_hash = models.CharField(max_length=64, blank=True, null=True)

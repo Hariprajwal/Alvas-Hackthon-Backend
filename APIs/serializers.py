@@ -42,6 +42,8 @@ class PatientSerializer(serializers.ModelSerializer):
 
 
 class ScanLogSerializer(serializers.ModelSerializer):
+    assigned_doctor_name = serializers.CharField(source='assigned_doctor.username', read_only=True)
+
     class Meta:
         model = ScanLog
         fields = '__all__'

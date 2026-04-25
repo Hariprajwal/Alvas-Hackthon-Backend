@@ -238,7 +238,13 @@ class ScanLogViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.role in ['doctor', 'nurse']:
+        if user.role == 'doctor':
+            # Doctor sees: scans assigned specifically to them OR all escalated scans
+            from django.db.models import Q
+            qs = ScanLog.objects.filter(
+                Q(assigned_doctor=user) | Q(is_escalated=True, assigned_doctor__isnull=True)
+            )
+        elif user.role == 'nurse':
             qs = ScanLog.objects.all()
         elif user.role == 'patient':
             qs = ScanLog.objects.filter(patient__user=user)
@@ -254,14 +260,39 @@ class ScanLogViewSet(viewsets.ModelViewSet):
     def escalate(self, request, pk=None):
         scan_log = self.get_object()
         scan_log.is_escalated = True
+
+        # Assign to a specific doctor if provided
+        doctor_id = request.data.get('doctor_id')
+        if doctor_id:
+            from .models import User
+            try:
+                doctor = User.objects.get(id=doctor_id, role='doctor')
+                scan_log.assigned_doctor = doctor
+            except User.DoesNotExist:
+                pass
+
         extra_notes = request.data.get('notes', '').strip()
+        urgency = request.data.get('urgency', '')
+        note_parts = []
+        if urgency:
+            note_parts.append(f"[{urgency}]")
         if extra_notes:
+            note_parts.append(extra_notes)
+        if note_parts:
+            combined = " ".join(note_parts)
             if scan_log.doctor_notes:
-                scan_log.doctor_notes += f" | Nurse Note: {extra_notes}"
+                scan_log.doctor_notes += f" | Nurse: {combined}"
             else:
-                scan_log.doctor_notes = f"Nurse Note: {extra_notes}"
+                scan_log.doctor_notes = f"Nurse: {combined}"
+
         scan_log.save()
-        return Response({"status": "escalated", "id": scan_log.id, "is_escalated": True})
+        return Response({
+            "status": "escalated",
+            "id": scan_log.id,
+            "is_escalated": True,
+            "assigned_doctor": scan_log.assigned_doctor_id,
+            "assigned_doctor_name": scan_log.assigned_doctor.username if scan_log.assigned_doctor else None,
+        })
 
     @action(detail=True, methods=['post'])
     def review(self, request, pk=None):
