@@ -12,13 +12,11 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
 # ─── Config ────────────────────────────────────────────────────────────────
-OPENROUTER_API_KEY = "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"
+CEREBRAS_API_KEY = "csk-p6ertpyrt42rf8en98dvppf3ywtjvnj4pr3f5e5mjfymypx3"
 
-# Models tested live as of April 2025 — ordered by capability
-FREE_MODELS = [
-    "openai/gpt-oss-120b:free",       # Best quality, confirmed working
-    "openai/gpt-oss-20b:free",         # Faster, confirmed working
-    "liquid/lfm-2.5-1.2b-instruct:free", # Small but reliable fallback
+# Cerebras models for fast medical reasoning
+AVAILABLE_MODELS = [
+    "llama3.1-8b",
 ]
 
 SYSTEM_PROMPT = """You are GenVeda AI, a friendly and knowledgeable dermatology health assistant.
@@ -45,10 +43,8 @@ CRITICAL FORMATTING RULES — YOU MUST FOLLOW THESE:
 - Write as if speaking clearly to a patient face to face"""
 
 HEADERS = {
-    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+    "Authorization": f"Bearer {CEREBRAS_API_KEY}",
     "Content-Type": "application/json",
-    "HTTP-Referer": "https://genveda.health",
-    "X-Title": "GenVeda Dermatology AI",
 }
 
 
@@ -197,10 +193,10 @@ def sanitize_text(text: str) -> str:
 
 
 
-def call_openrouter(messages: list, model: str) -> str:
-    """Call OpenRouter with the given messages and model. Raises on failure."""
+def call_llm(messages: list, model: str) -> str:
+    """Call Cerebras API with the given messages and model. Raises on failure."""
     r = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
+        "https://api.cerebras.ai/v1/chat/completions",
         headers=HEADERS,
         json={
             "model": model,
@@ -246,10 +242,10 @@ def get_llm_response(user_message: str, context: str, history: list) -> str:
     messages.append({"role": "user", "content": user_message})
 
     errors = []
-    for model in FREE_MODELS:
+    for model in AVAILABLE_MODELS:
         try:
             print(f"[RAG-LLM] Trying: {model}")
-            reply = call_openrouter(messages, model)
+            reply = call_llm(messages, model)
             print(f"[RAG-LLM] OK with {model}: {reply[:60]}...")
             return reply
         except Exception as e:
