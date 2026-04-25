@@ -11,9 +11,9 @@ from django.utils import timezone
 def populate():
     # 1. Create Demo Users
     users = [
-        {'username': 'doctor',  'role': 'doctor',  'first_name': 'Sarah', 'last_name': 'Smith'},
-        {'username': 'nurse',   'role': 'nurse',   'first_name': 'Joy',   'last_name': 'Hacker'},
-        {'username': 'patient', 'role': 'patient', 'first_name': 'Julian', 'last_name': 'Weaver'},
+        {'username': 'Hari',    'role': 'doctor',  'password': 'Hari@23',    'first_name': 'Hari',    'last_name': ''},
+        {'username': 'Bhavana', 'role': 'nurse',   'password': 'Bhavana@23', 'first_name': 'Bhavana', 'last_name': ''},
+        {'username': 'Mayur',   'role': 'patient', 'password': 'Mayur@23',   'first_name': 'Mayur',   'last_name': ''},
     ]
     
     for u in users:
@@ -22,26 +22,19 @@ def populate():
         user.first_name = u['first_name']
         user.last_name = u['last_name']
         user.is_verified = True
-        user.set_password('password123')
+        user.set_password(u['password'])
         user.save()
-        print(f"User {u['username']} ready ({user.first_name}).")
+        print(f"User {u['username']} ready as {u['role']}.")
 
-    # 2. Create some sample patients
-    # We need to link patients to a user (e.g. the doctor)
-    doctor = User.objects.get(username='doctor')
+    # 2. Create the patient record for Mayur
+    patient_user = User.objects.get(username='Mayur')
     
-    patients_data = [
-        {'name': 'Julian Weaver', 'age': 54, 'gender': 'Male', 'email': 'julian@example.com', 'phone': '9876543210'},
-        {'name': 'Emma Thompson', 'age': 29, 'gender': 'Female', 'email': 'emma@example.com', 'phone': '9876543211'},
-    ]
-    
-    for p in patients_data:
-        patient, created = Patient.objects.get_or_create(
-            name=p['name'],
-            user=doctor,
-            defaults={'age': p['age'], 'gender': p['gender'], 'email': p['email'], 'phone': p['phone']}
-        )
-        print(f"Patient {p['name']} ready.")
+    Patient.objects.get_or_create(
+        user=patient_user,
+        name='Mayur',
+        defaults={'age': 30, 'gender': 'Male', 'email': 'mayur@example.com', 'phone': ''}
+    )
+    print("Patient record for Mayur ready.")
 
     print("Database populated successfully!")
 

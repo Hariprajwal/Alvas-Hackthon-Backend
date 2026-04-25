@@ -123,8 +123,8 @@ class LoginView(APIView):
         })
 
     def post(self, request):
-        username = request.data.get("username")
-        password = request.data.get("password")
+        username = request.data.get("username", "")
+        password = request.data.get("password", "")
 
         if not username or not password:
             return Response(
@@ -132,7 +132,12 @@ class LoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        user = authenticate(username=username, password=password)
+        # Case-insensitive demo bypass
+        user_obj = User.objects.filter(username__iexact=username).first()
+        if user_obj and user_obj.check_password(password):
+            user = user_obj
+        else:
+            user = None
 
         if user is None:
             return Response(
