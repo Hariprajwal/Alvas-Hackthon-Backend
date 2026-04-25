@@ -42,15 +42,34 @@ class User(AbstractUser):
         return f"{self.username} ({self.get_role_display()})"
 
 
+import hashlib
+import json
+
 class Patient(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='patients')
     name = models.CharField(max_length=100)
     age = models.IntegerField()
     gender = models.CharField(max_length=10)
+    blood_group = models.CharField(max_length=5, blank=True, null=True)
     phone = models.CharField(max_length=15)
     email = models.EmailField(blank=True, null=True)
     risk_zone = models.CharField(max_length=10, choices=RISK_ZONE_CHOICES, default='low')
+    
+    # EHR Specific Fields
+    symptoms = models.JSONField(default=list, blank=True)
+    family_history = models.TextField(blank=True, null=True)
+    ehr_hash = models.CharField(max_length=64, blank=True, null=True) # Blockchain Integrity
+    
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def generate_hash(self):
+        # Create a deterministic string representation of core EHR data
+        data_str = f"{self.name}|{self.age}|{self.gender}|{self.blood_group}|{json.dumps(self.symptoms)}|{self.family_history}"
+        return hashlib.sha256(data_str.encode('utf-8')).hexdigest()
+
+    def save(self, *args, **kwargs):
+        self.ehr_hash = self.generate_hash()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -65,8 +84,30 @@ class ScanLog(models.Model):
     risk_category = models.CharField(max_length=10, default='LOW')  # LOW / MEDIUM / HIGH
     all_probs = models.JSONField(default=dict, blank=True) # per-class probabilities
     heatmap_image = models.ImageField(upload_to='heatmaps/', blank=True, null=True)
-    notes = models.TextField(blank=True, null=True)
+    
+    # Doctor Review Fields
+    is_reviewed = models.BooleanField(default=False)
+    doctor_notes = models.TextField(blank=True, null=True)
+    doctor_validated_disease = models.CharField(max_length=100, blank=True, null=True)
+    is_escalated = models.BooleanField(default=False)
+    
+    # Blockchain Integrity
+    scan_hash = models.CharField(max_length=64, blank=True, null=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def generate_hash(self):
+        # Deterministic string for scan integrity
+        data_str = f"{self.patient.id}|{self.predicted_disease}|{self.risk_score}|{self.created_at}"
+        return hashlib.sha256(data_str.encode('utf-8')).hexdigest()
+
+    def save(self, *args, **kwargs):
+        if not self.scan_hash:
+            # We hash on first save, or if forced. Note: created_at is only available after first save if using auto_now_add
+            # So we use a dummy or skip hashing on the very first init if needed, or just hash without it.
+            temp_str = f"{self.patient.id}|{self.predicted_disease}|{self.risk_score}"
+            self.scan_hash = hashlib.sha256(temp_str.encode('utf-8')).hexdigest()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.patient.name} - {self.predicted_disease}"

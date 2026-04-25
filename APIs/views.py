@@ -8,6 +8,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import SessionAuthentication
 from rest_framework import viewsets, permissions
+from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from ml_models.predictor import predict_lesion
@@ -44,17 +45,24 @@ class RegisterView(APIView):
             )
 
         user = serializer.save()
+        user.is_verified = True
+        user.save()
 
-        # Send verification email (console backend in development)
-        send_otp_email(
-            otp=user.verification_code,
-            email=user.email,
-        )
+        # Generate JWT tokens directly
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(user)
 
-        return Response(
-            {"message": "User registered. Check email for verification code.", "data": {"user_name": user.username}, "error": None},
-            status=status.HTTP_201_CREATED
-        )
+        return Response({
+            "message": "User registered and logged in.",
+            "data": {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user_name": user.first_name if user.first_name else user.username,
+                "user_id": str(user.id),
+                "role": user.role,
+            },
+            "error": None
+        }, status=status.HTTP_201_CREATED)
 
 
 # -----------------------------
@@ -146,7 +154,7 @@ class LoginView(APIView):
             "data": {
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
-                "user_name": user.username,
+                "user_name": user.first_name if user.first_name else user.username,
                 "user_id": str(user.id),
                 "role": user.role,
             },
@@ -163,11 +171,27 @@ class UserProfileView(APIView):
 
     def get(self, request):
         user = request.user
+        # Auto-create a Patient record for patient-role users if they don't have one yet
+        patient_id = None
+        if user.role == 'patient':
+            patient_obj, _ = Patient.objects.get_or_create(
+                user=user,
+                defaults={
+                    'name': f"{user.first_name} {user.last_name}".strip() or user.username,
+                    'age': 0,
+                    'gender': 'Unknown',
+                    'phone': '',
+                }
+            )
+            patient_id = patient_obj.id
         return Response({
             "id": user.id,
             "username": user.username,
             "email": user.email,
             "role": user.role,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "patient_id": patient_id,
         })
 
 
@@ -194,10 +218,8 @@ class PatientViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.role == 'doctor':
-            return Patient.objects.filter(Q(user=user) | Q(appointments__doctor=user)).distinct()
-        elif user.role == 'nurse':
-            return Patient.objects.filter(user=user)
+        if user.role in ['doctor', 'nurse']:
+            return Patient.objects.all()
         elif user.role == 'patient':
             return Patient.objects.filter(user=user)
         return Patient.objects.none()
@@ -216,10 +238,8 @@ class ScanLogViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.role == 'doctor':
-            qs = ScanLog.objects.filter(Q(patient__user=user) | Q(patient__appointments__doctor=user)).distinct()
-        elif user.role == 'nurse':
-            qs = ScanLog.objects.filter(patient__user=user)
+        if user.role in ['doctor', 'nurse']:
+            qs = ScanLog.objects.all()
         elif user.role == 'patient':
             qs = ScanLog.objects.filter(patient__user=user)
         else:
@@ -230,19 +250,50 @@ class ScanLogViewSet(viewsets.ModelViewSet):
             qs = qs.filter(patient_id=patient_id)
         return qs
 
+    @action(detail=True, methods=['post'])
+    def escalate(self, request, pk=None):
+        scan_log = self.get_object()
+        scan_log.is_escalated = True
+        extra_notes = request.data.get('notes', '').strip()
+        if extra_notes:
+            if scan_log.doctor_notes:
+                scan_log.doctor_notes += f" | Nurse Note: {extra_notes}"
+            else:
+                scan_log.doctor_notes = f"Nurse Note: {extra_notes}"
+        scan_log.save()
+        return Response({"status": "escalated", "id": scan_log.id, "is_escalated": True})
+
+    @action(detail=True, methods=['post'])
+    def review(self, request, pk=None):
+        scan_log = self.get_object()
+        scan_log.is_reviewed = True
+        scan_log.doctor_notes = request.data.get('doctor_notes', scan_log.doctor_notes)
+        scan_log.doctor_validated_disease = request.data.get('doctor_validated_disease', scan_log.doctor_validated_disease)
+        scan_log.save()
+        return Response({"status": "reviewed", "id": scan_log.id, "is_reviewed": True})
+
     def perform_create(self, serializer):
         scan_log = serializer.save(predicted_disease="Calculating...", confidence=0.0)
 
         try:
+            import json
             from ml_models.predictor import predict_lesion, CLASSES, compute_risk_score
 
             image_path = scan_log.image.path
+            
+            # Parse symptoms and family_history from request data
+            symptoms_raw = self.request.data.get("symptoms", "[]")
+            family_history = self.request.data.get("family_history", "")
+            try:
+                symptoms = json.loads(symptoms_raw)
+            except json.JSONDecodeError:
+                symptoms = []
 
             # Single inference returning top class, confidence, and full prob vector
             top_class, confidence, raw_probs = predict_lesion(image_path)
 
-            # Compute weighted risk score from the raw softmax probabilities
-            risk_score, agg = compute_risk_score(raw_probs)
+            # Compute multimodal risk score
+            risk_score, risk_components = compute_risk_score(raw_probs, symptoms, family_history)
 
             # Category thresholds: <44 LOW, 44-66 MEDIUM, >=67 HIGH
             if risk_score >= 67:
@@ -364,12 +415,10 @@ class PrescriptionViewSet(viewsets.ModelViewSet):
         user = self.request.user
         qs = Prescription.objects.all()
 
-        if user.role == 'patient':
+        if user.role == 'doctor' or user.role == 'nurse':
+            qs = Prescription.objects.all()
+        elif user.role == 'patient':
             qs = qs.filter(patient__user=user)
-        elif user.role == 'nurse':
-            qs = qs.filter(patient__user=user)
-        elif user.role == 'doctor':
-            qs = qs.filter(Q(patient__user=user) | Q(patient__appointments__doctor=user)).distinct()
 
         patient_id = self.request.query_params.get('patient')
         if patient_id:
