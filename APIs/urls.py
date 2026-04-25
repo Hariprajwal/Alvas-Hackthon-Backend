@@ -24,6 +24,8 @@ urlpatterns = [
     # Scans
     path("scans/", ScanLogViewSet.as_view({'get': 'list', 'post': 'create'}), name="scans"),
     path("scans/<int:pk>/", ScanLogViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'}), name="scan-detail"),
+    path("scans/<int:pk>/escalate/", ScanLogViewSet.as_view({'post': 'escalate'}), name="scan-escalate"),
+    path("scans/<int:pk>/review/", ScanLogViewSet.as_view({'post': 'review'}), name="scan-review"),
 
     # Reports (nurse uploads)
     path("reports/", PatientReportViewSet.as_view({'get': 'list', 'post': 'create'}), name="reports"),
