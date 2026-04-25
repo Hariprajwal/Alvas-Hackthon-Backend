@@ -6,6 +6,7 @@ from .views import (
     PatientReportViewSet, PatientTriageView, AppointmentViewSet,
     DoctorListView, PrescriptionViewSet
 )
+from .chat_rag import RAGChatView
 
 urlpatterns = [
     # Auth
@@ -35,4 +36,7 @@ urlpatterns = [
 
     # Prescriptions
     path("prescriptions/", PrescriptionViewSet.as_view({'get': 'list', 'post': 'create'}), name="prescriptions"),
+
+    # RAG Chatbot
+    path("chat/", RAGChatView.as_view(), name="chat"),
 ]
